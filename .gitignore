@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+firebase-service-account.json
+celerybeat-schedule
