@@ -3,6 +3,17 @@
 Routing: check Redis presence — if the user is active on web, send to web tokens;
 else if active on mobile, send to mobile; else default to mobile tokens.
 Also persists an in-app Notification row.
+
+New: title/body are no longer passed as literal strings by callers.
+Instead, callers pass a translation KEY (+ optional params for
+interpolation), and this function resolves the actual text using the
+RECIPIENT's own User.language -- so two people in the same company, with
+different assigned languages, each get the notification in their own
+language. The resolved (already-translated) text is what gets persisted
+in the Notification row, not the key -- so historical notifications don't
+retroactively change if someone's language is changed later, and no
+client (dashboard/portal/mobile) needs any translation logic of its own
+to display a notification list; it just shows whatever's in the DB.
 """
 import json
 
@@ -11,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.notification_i18n import translate
 from app.integrations import firebase
 from app.models.users import DeviceToken, Notification, NotificationPreference
 
@@ -80,29 +92,32 @@ async def send(
     db: AsyncSession,
     user_id: int,
     category: str,
-    title: str,
-    body: str = "",
+    title_key: str,
+    body_key: str = "",
+    title_params: dict | None = None,
+    body_params: dict | None = None,
     extra_data: dict | None = None,
     audience: str = "employee",
 ) -> None:
     """The one and only way to notify a user.
+
+    `title_key`/`body_key` are translation keys (see
+    app/core/notification_i18n.py), resolved against the RECIPIENT's own
+    User.language -- never the sender's/caller's language. `title_params`/
+    `body_params` fill in `{{placeholders}}` inside the resolved text
+    (e.g. {"time": "09:00"} for "Your shift starts at {{time}}").
 
     `extra_data` is merged into the FCM push's data payload alongside
     `category` -- lets a caller tag a more specific `type` (e.g.
     "sleep_checkin" vs "mood_water_checkin") so the client can deep-link to
     the exact right screen instead of just knowing the broad category.
 
-    New: `audience` controls WHICH registered device this can ever reach.
+    `audience` controls WHICH registered device this can ever reach.
     "dashboard" (Owner/Manager-facing items like desk-location/overtime
     requests) routes ONLY to platform="dashboard" tokens -- never falling
     back to that same person's mobile or portal-web tokens, even if
-    that's all they have registered. Previously a Manager who also used
-    the mobile app or employee portal could have a dashboard-only
-    notification (e.g. "Daniel requested a desk location update") pushed
-    to their phone instead, since routing only ever looked at platform
-    presence, with no concept of which app a notification was even
-    meant for. "employee" (the default) keeps the existing mobile/web
-    presence-based routing, unchanged for every other call site.
+    that's all they have registered. "employee" (the default) keeps the
+    existing mobile/web presence-based routing.
     """
     from app.models.users import User
 
@@ -113,7 +128,12 @@ async def send(
     # 0b. Respect per-user mutes — but critical categories can never be muted.
     if category not in NON_MUTABLE_CATEGORIES and category in await muted_categories(db, user_id):
         return
-    # 1. Persist in-app notification.
+
+    # 1. Resolve text in the RECIPIENT's own language, then persist.
+    language = getattr(user_row, "language", None) if user_row is not None else None
+    title = translate(language, title_key, title_params)
+    body = translate(language, body_key, body_params) if body_key else ""
+
     db.add(Notification(user_id=user_id, category=category, title=title, body=body,
                         extra_data_json=extra_data))
     await db.flush()

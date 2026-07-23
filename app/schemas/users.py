@@ -26,11 +26,16 @@ class UserOut(BaseModel):
     job_type: str
     actual_working_hours: bool
     hourly_fee: float | None
+    language: str
 
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
     avatar_url: str | None = None
+    # New: employee's own self-service language toggle (Settings page,
+    # portal). Distinct from PATCH /employees/{id}/language, which is
+    # Owner-only and used to set an EMPLOYEE's language on their behalf.
+    language: str | None = None
 
 
 class EmployeeAdminUpdate(BaseModel):
@@ -75,6 +80,7 @@ class InviteCreate(BaseModel):
     job_type: str = "full_time"
     actual_working_hours: bool = True
     hourly_fee: float | None = None
+    language: str = "en"
 
 
 class ConsentIn(BaseModel):
@@ -95,3 +101,6 @@ class ActualWorkingHoursUpdate(BaseModel):
 
 class HourlyFeeUpdate(BaseModel):
     hourly_fee: float | None = None
+
+class LanguageUpdate(BaseModel):
+    language: str  # en | ja | ko | zh | hi

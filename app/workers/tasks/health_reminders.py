@@ -71,7 +71,8 @@ async def _send_mood_water_reminders() -> None:
 
             await notification_service.send(
                 db, session.user_id, category="health",
-                title="Quick check-in", body="How are you feeling, and have you had some water?",
+                title_key="health.moodWaterCheckin.title",
+                body_key="health.moodWaterCheckin.body",
                 extra_data={"type": "mood_water_checkin", "prompt_id": str(prompt.id)},
             )
             session.last_health_prompt_at = datetime.now(timezone.utc)

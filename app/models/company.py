@@ -60,7 +60,10 @@ class CompanyInvite(Base, PKMixin, TenantMixin, CreatedAtMixin):
     actual_working_hours: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     hourly_fee: Mapped[float | None] = mapped_column(Numeric(10, 2))
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    short_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    language: Mapped[str] = mapped_column(String(10), default="en", nullable=False)
+    
 
 
 class Subscription(Base, PKMixin, TenantMixin, CreatedAtMixin):

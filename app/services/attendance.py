@@ -213,7 +213,8 @@ class AttendanceService(TenantService):
         await self.db.flush()
         await notification_service.send(
             self.db, self.current_user.id, category="health",
-            title="Sleep check-in", body="How did you sleep last night?",
+            title_key="health.sleepCheckin.title",
+            body_key="health.sleepCheckin.body",
             extra_data={"type": "sleep_checkin", "prompt_id": str(prompt.id)},
         )
 
@@ -472,8 +473,8 @@ class AttendanceService(TenantService):
 
         await notification_service.send(
             self.db, employee_id, category="attendance",
-            title="Are you there?",
-            body="Quick check-in — tap to confirm you're okay.",
+            title_key="attendance.presenceCheck.title",
+            body_key="attendance.presenceCheck.body",
             extra_data={"type": "presence_check", "prompt_id": str(prompt.id)},
         )
         return prompt
@@ -513,8 +514,9 @@ class AttendanceService(TenantService):
                 continue
             await notification_service.send(
                 self.db, recipient.id, category="attendance",
-                title="Desk location change requested",
-                body=f"{self.current_user.full_name or 'An employee'} requested a desk location update.",
+                title_key="attendance.deskLocationRequest.title",
+                body_key="attendance.deskLocationRequest.body",
+                body_params={"name": self.current_user.full_name or "An employee"},
                 extra_data={"type": "desk_location_request", "employee_id": str(self.current_user.id),
                            "request_id": str(req.id)},
                 audience="dashboard",

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.dependencies import DB, ROLE_MANAGER, ROLE_OWNER, require_role,RequireActivePlan
 from app.models.users import Team, User
 from app.schemas.users import (ActualWorkingHoursUpdate, EmployeeAdminUpdate, HolidayCountryUpdate,
-                                HourlyFeeUpdate, JobTypeUpdate, RoleUpdate, TeamAssign,
+                                HourlyFeeUpdate, JobTypeUpdate, LanguageUpdate, RoleUpdate, TeamAssign,
                                 TeamCreate, TeamOut, TimezoneUpdate, UserOut)
 from app.services.base import TenantService
 
@@ -144,6 +144,22 @@ async def change_hourly_fee(employee_id: int, data: HourlyFeeUpdate, db: DB,
     svc = TenantService(db, user)
     target = await svc.assert_user_in_tenant(employee_id)
     target.hourly_fee = data.hourly_fee
+    await db.flush()
+    return target
+
+
+@router.patch("/employees/{employee_id}/language", response_model=UserOut)
+async def change_language(employee_id: int, data: LanguageUpdate, db: DB,
+                          user=Depends(require_role([ROLE_OWNER]))):
+    """New: employee's preferred UI language for mobile/portal. Unlike
+    timezone/holiday_country, there's no clear-to-null case here -- "en"
+    IS the fallback value itself, so every value must be one of the
+    supported codes."""
+    if data.language not in ("en", "ja", "ko", "zh", "hi"):
+        raise HTTPException(status_code=400, detail="Unsupported language")
+    svc = TenantService(db, user)
+    target = await svc.assert_user_in_tenant(employee_id)
+    target.language = data.language
     await db.flush()
     return target
 

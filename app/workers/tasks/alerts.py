@@ -47,8 +47,6 @@ async def _escalation_sweep() -> int:
                     AlertSetting.type == alert.type))).scalar_one_or_none()
             setting = settings_cache[key]
 
-            # Disabled types are skipped entirely -- previously they still
-            # escalated with a 15-min fallback regardless of this flag.
             if setting is not None and not setting.enabled:
                 continue
 
@@ -61,12 +59,6 @@ async def _escalation_sweep() -> int:
             alert.escalated_at = datetime.now(timezone.utc)
             escalated += 1
 
-            # New: actually notify whoever notify_roles says should hear
-            # about this. Falls back to owner_admin only if nothing is
-            # configured, so escalation is never completely silent.
-            # Handles both string and list representations, since the
-            # Settings UI's role fields have been confirmed to sometimes
-            # send an array rather than a comma-separated string.
             raw_notify_roles = setting.notify_roles if setting else None
             if isinstance(raw_notify_roles, list):
                 roles = {str(r).strip() for r in raw_notify_roles if str(r).strip()}
@@ -78,9 +70,6 @@ async def _escalation_sweep() -> int:
             recipient_stmt = select(User).where(
                 User.company_id == alert.company_id, User.role.in_(roles), User.active.is_(True),
             )
-            # If this alert is about a specific employee and "manager" is
-            # one of the target roles, only that employee's own manager
-            # should hear about it, not every manager in the company.
             if alert.user_id is not None and "manager" in roles:
                 subject = await db.get(User, alert.user_id)
                 if subject is not None and subject.team_id is not None:
@@ -92,8 +81,9 @@ async def _escalation_sweep() -> int:
             for recipient in recipients:
                 await notification_service.send(
                     db, recipient.id, category="alert",
-                    title="Alert escalated",
-                    body=f"An unacknowledged {alert.type.replace('_', ' ')} alert needs attention.",
+                    title_key="alert.escalated.title",
+                    body_key="alert.escalated.body",
+                    body_params={"alertType": alert.type.replace("_", " ")},
                     extra_data={"type": "alert_escalated", "alert_id": str(alert.id)},
                 )
 

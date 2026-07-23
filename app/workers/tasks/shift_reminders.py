@@ -4,12 +4,12 @@ checked in). Uses the same compute_shift_bounds_utc() logic as
 shift_status()/check_in(), so this respects per-employee timezone and the
 company's working_hours_mode exactly the same way everything else does.
 
-Dedup: rather than a new tracking table, this checks the existing
-Notification table for one already sent today with a matching category+title
--- reusing infrastructure that's already there. The trigger window is the
-full 15 minutes leading up to the moment (not a single instant), so it
-fires reliably regardless of small delays in when Beat actually runs this
-task, as long as it runs at least once somewhere in that window.
+Dedup: checks the existing Notification table for one already sent today
+carrying the same extra_data "type" (e.g. "shift_start_reminder") -- this
+used to check TITLE TEXT instead, which broke the moment notification text
+became localized per-recipient (two people with different languages would
+never match on title, defeating the dedup check silently). Matching on the
+structured type tag is also just more correct in general, language aside.
 
 Skips: anyone with a holiday today (their own country, or a company-wide
 one) or approved leave covering today -- no reason to remind someone about
@@ -45,20 +45,11 @@ async def _send_shift_reminders() -> None:
     lead = timedelta(minutes=REMINDER_LEAD_MINUTES)
 
     async with SessionLocal() as db:
-        # New: Owner is excluded -- shift reminders are about personal
-        # attendance schedules, and the Owner isn't expected to be "on
-        # shift" the same way employees/managers are. Previously this had
-        # no role filter at all, so Owner got reminded about their own
-        # shift like everyone else, which made no sense for that role.
-        # Also new: part-time employees have no fixed shift at all (see
-        # AttendanceService.check_in()) -- reminding them about a "shift
-        # start" that doesn't apply to them makes no sense either.
         users = (await db.execute(
             select(User).where(User.active.is_(True), User.role != "owner_admin")
         )).scalars().all()
         users = [u for u in users if getattr(u, "job_type", "full_time") != "part_time"]
 
-        # Cache one Company row per company_id -- most employees share one.
         companies: dict[int, Company] = {}
 
         for user in users:
@@ -66,7 +57,6 @@ async def _send_shift_reminders() -> None:
                 companies[user.company_id] = await db.get(Company, user.company_id)
             company = companies[user.company_id]
 
-            # Skip holidays (own country, or company-wide "all").
             if user.holiday_country:
                 is_holiday = (await db.execute(
                     select(Holiday).where(
@@ -78,7 +68,6 @@ async def _send_shift_reminders() -> None:
                 if is_holiday is not None:
                     continue
 
-            # Skip approved leave covering today.
             on_leave = (await db.execute(
                 select(LeaveRequest).where(
                     LeaveRequest.user_id == user.id, LeaveRequest.status == "approved",
@@ -102,39 +91,46 @@ async def _send_shift_reminders() -> None:
 
             # ---------- shift-start reminder (everyone not already checked in) ----------
             if open_session is None and shift_start_utc - lead <= now < shift_start_utc:
-                already_sent = await _already_sent_today(db, user.id, "Shift starting soon")
+                already_sent = await _already_sent_today(db, user.id, "shift_start_reminder")
                 if not already_sent:
                     local_start = shift_start_utc.astimezone(ZoneInfo(employee_tz_name)).strftime("%H:%M")
                     await notification_service.send(
                         db, user.id, category="attendance",
-                        title="Shift starting soon",
-                        body=f"Your shift starts at {local_start} — check in when you're ready.",
+                        title_key="attendance.shiftStartReminder.title",
+                        body_key="attendance.shiftStartReminder.body",
+                        body_params={"time": local_start},
                         extra_data={"type": "shift_start_reminder"},
                     )
 
             # ---------- shift-end reminder (only if currently checked in) ----------
             if open_session is not None and shift_end_utc - lead <= now < shift_end_utc:
-                already_sent = await _already_sent_today(db, user.id, "Shift ending soon")
+                already_sent = await _already_sent_today(db, user.id, "shift_end_reminder")
                 if not already_sent:
                     await notification_service.send(
                         db, user.id, category="attendance",
-                        title="Shift ending soon",
-                        body="Your shift ends in about 15 minutes — don't forget to check out.",
+                        title_key="attendance.shiftEndReminder.title",
+                        body_key="attendance.shiftEndReminder.body",
                         extra_data={"type": "shift_end_reminder"},
                     )
 
         await db.commit()
 
 
-async def _already_sent_today(db, user_id: int, title: str) -> bool:
+async def _already_sent_today(db, user_id: int, extra_type: str) -> bool:
+    """Matches on extra_data_json["type"], not title text -- title is now
+    resolved per-recipient language and would never reliably match across
+    calls, and matching on the structured type tag is more correct
+    regardless. Fetches today's notifications for this one user and
+    filters in Python rather than doing JSON-path filtering in SQL, since
+    it's a small, per-user set and keeps this portable across DB backends."""
     from sqlalchemy import select
     from app.models.users import Notification
 
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    existing = (await db.execute(
+    rows = (await db.execute(
         select(Notification).where(
-            Notification.user_id == user_id, Notification.title == title,
+            Notification.user_id == user_id,
             Notification.created_at >= today_start,
-        ).limit(1)
-    )).scalar_one_or_none()
-    return existing is not None
+        )
+    )).scalars().all()
+    return any((row.extra_data_json or {}).get("type") == extra_type for row in rows)

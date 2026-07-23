@@ -8,7 +8,7 @@ import os
 
 from app.core.config import settings
 from app.routers import (admin, admin_auth, ai_insights, alerts, attendance, auth, billing, certificates, company,
-                         dashboard, employees, feedback, health, knowledge, holidays, invoices,
+                         dashboard, dev_testing, employees, feedback, health, knowledge, holidays, invoices,
                          notifications, onboarding, overtime, performance, projects,
                          recognitions, reports, settings as settings_router_module, support)
 
@@ -76,6 +76,12 @@ app.include_router(support.router)
 # separated from every customer-facing router above.
 app.include_router(admin_auth.router)
 app.include_router(admin.router)
+
+# Dev-only manual notification testing -- NO AUTH by design, gated behind
+# ENV == "local" inside the router itself as a second layer of protection.
+# Remove this router entirely (and the import above) once notification
+# testing is done.
+app.include_router(dev_testing.router)
 
 
 @app.get("/healthz", tags=["meta"])

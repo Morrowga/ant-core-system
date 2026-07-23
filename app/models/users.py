@@ -45,6 +45,7 @@ class User(Base, PKMixin, TenantMixin, CreatedAtMixin):
     job_type: Mapped[str] = mapped_column(String(20), default="full_time", nullable=False)
     actual_working_hours: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     hourly_fee: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    language: Mapped[str] = mapped_column(String(10), default="en", nullable=False)
 
 
 class Team(Base, PKMixin, TenantMixin):
