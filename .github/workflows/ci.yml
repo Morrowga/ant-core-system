@@ -1,0 +1,82 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          # Named "workforce" (not "workforce_test") DELIBERATELY --
+          # Settings.DATABASE_URL / DATABASE_URL_SYNC both default to
+          # localhost:5432/workforce, so matching that name here means
+          # neither needs to be overridden below at all.
+          POSTGRES_DB: workforce
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        # Same reasoning -- REDIS_URL/CELERY_BROKER_URL/
+        # CELERY_RESULT_BACKEND all default to localhost:6379/*.
+        ports:
+          - 6379:6379
+
+    env:
+      # DATABASE_URL, DATABASE_URL_SYNC, REDIS_URL, CELERY_BROKER_URL,
+      # CELERY_RESULT_BACKEND, every STRIPE_* key, and OPENAI_API_KEY all
+      # have defaults in Settings that already match this CI setup --
+      # deliberately NOT set here, so this only overrides what actually
+      # needs a real value to avoid a pydantic-settings ValidationError
+      # at import time (Settings() is instantiated at module import via
+      # `settings = get_settings()` in config.py, so a missing required
+      # field fails before any test even runs).
+      JWT_SECRET_KEY: test-secret-not-for-production
+
+      # SMTP_* has NO default in Settings -- required, so these are
+      # mandatory here regardless of what any individual test touches.
+      # Dummy values only; nothing in CI actually sends email.
+      SMTP_HOST: smtp.example.com
+      SMTP_PORT: "587"
+      SMTP_USERNAME: test
+      SMTP_PASSWORD: test
+      SMTP_FROM_ADDRESS: test@example.com
+
+      # Default (/data/uploads) doesn't exist on this runner -- redirected
+      # to a writable temp path (created in its own step below) so any
+      # test that writes a file (certificates, etc.) doesn't fail on a
+      # missing directory.
+      UPLOAD_DIR: /tmp/uploads
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create upload directory
+        run: mkdir -p /tmp/uploads
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Run tests
+        run: pytest -v
