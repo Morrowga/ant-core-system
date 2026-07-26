@@ -1,0 +1,54 @@
+"""add presence checks and work-outside timestamp
+
+Revision ID: 0c305fa68ccb
+Revises: fecd79cc1d4e
+Create Date: 2026-07-18 06:33:56.048866
+
+Guarded -- presence_check_prompts is part of current model metadata, so
+0001 already creates it on a fresh DB.
+"""
+from alembic import op
+import sqlalchemy as sa
+
+
+revision = '0c305fa68ccb'
+down_revision = 'fecd79cc1d4e'
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if 'presence_check_prompts' not in inspector.get_table_names():
+        op.create_table('presence_check_prompts',
+        sa.Column('user_id', sa.BigInteger(), nullable=False),
+        sa.Column('attendance_session_id', sa.BigInteger(), nullable=False),
+        sa.Column('sent_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+        sa.Column('responded_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('response', sa.String(length=5), nullable=True),
+        sa.Column('interval_minutes', sa.Integer(), nullable=False),
+        sa.Column('deducted', sa.Boolean(), nullable=False),
+        sa.Column('reverted_by', sa.BigInteger(), nullable=True),
+        sa.Column('reverted_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column('company_id', sa.BigInteger(), nullable=False),
+        sa.ForeignKeyConstraint(['attendance_session_id'], ['attendance_sessions.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['company_id'], ['companies.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['reverted_by'], ['users.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id')
+        )
+        op.create_index(op.f('ix_presence_check_prompts_attendance_session_id'), 'presence_check_prompts', ['attendance_session_id'], unique=False)
+        op.create_index(op.f('ix_presence_check_prompts_company_id'), 'presence_check_prompts', ['company_id'], unique=False)
+        op.create_index(op.f('ix_presence_check_prompts_user_id'), 'presence_check_prompts', ['user_id'], unique=False)
+
+
+def downgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if 'presence_check_prompts' in inspector.get_table_names():
+        op.drop_index(op.f('ix_presence_check_prompts_user_id'), table_name='presence_check_prompts')
+        op.drop_index(op.f('ix_presence_check_prompts_company_id'), table_name='presence_check_prompts')
+        op.drop_index(op.f('ix_presence_check_prompts_attendance_session_id'), table_name='presence_check_prompts')
+        op.drop_table('presence_check_prompts')

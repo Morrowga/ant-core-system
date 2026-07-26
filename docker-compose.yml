@@ -1,0 +1,65 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16   # Postgres 16 with the pgvector extension baked in
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: workforce
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app                    # live-mounts host code -> enables --reload to pick up edits
+      - uploads:/data/uploads      # shared file storage (certificates, avatars, attachments)
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  worker:
+    build: .
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app                    # live code -> requires `docker-compose restart worker` after edits (no autoreload)
+      - uploads:/data/uploads      # SAME shared volume as api — this was missing before, causing
+                                   # certificate PDFs to be written to a location the api container
+                                   # could never see, hence "Certificate file missing" on download
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
+
+  beat:
+    build: .
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+
+volumes:
+  pgdata:
+  uploads:

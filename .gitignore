@@ -1,0 +1,49 @@
+# Env files -- covers all variants, not just plain .env
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.Python
+
+# Virtualenv (both common naming conventions)
+.venv/
+venv/
+env/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Test / lint / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets -- specific known files (explicit is safer than a broad
+# wildcard here, so a legitimate non-secret firebase config file
+# elsewhere in the repo doesn't get silently swallowed)
+firebase-service-account.json
+
+# Logs
+*.log
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+
+# Local SQLite, if ever used for quick testing outside the Postgres container
+*.sqlite3
+*.db
