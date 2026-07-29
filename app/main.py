@@ -34,7 +34,13 @@ app.mount("/static/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="u
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.ENV == "local" else [],  # tighten per deployment
+    # Was `[]` for production -- meaning NO origin was ever actually
+    # allowed once ENV=production, not just Core Dashboard specifically.
+    # This had never been filled in for the real deployment. Add Portal's
+    # and HR Dashboard's URLs here too once they're live.
+    allow_origins=["*"] if settings.ENV == "local" else [
+        "https://ants-core-ui-nine.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -101,7 +107,3 @@ app.include_router(dev_testing.router)
 @app.get("/healthz", tags=["meta"])
 async def healthz():
     return {"status": "ok"}
-
-
-
-# CI/CD Testing
