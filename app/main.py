@@ -40,7 +40,8 @@ app.add_middleware(
     # and HR Dashboard's URLs here too once they're live.
     allow_origins=["*"] if settings.ENV == "local" else [
         "https://ants-core-ui-nine.vercel.app",
-        "https://ant-office-hr.vercel.app"
+        "https://ant-office-hr.vercel.app",
+        "https://ant-portal.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
