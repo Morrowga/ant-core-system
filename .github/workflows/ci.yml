@@ -85,10 +85,19 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    # Only deploy on an actual push to main (or a manual click of "Run
-    # workflow") -- never on a pull_request build, and never if the
-    # tests above failed (needs: test enforces that automatically).
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # This is what makes it continuous DELIVERY instead of continuous
+    # DEPLOYMENT: deploy only runs when this workflow run was started
+    # by a manual click of "Run workflow" in the Actions tab
+    # (github.event_name == 'workflow_dispatch') -- never automatically
+    # on a plain push. A push to main still runs the `test` job above
+    # automatically, but deploying is now a deliberate separate action,
+    # not something that happens the instant tests pass.
+    #
+    # (Originally tried gating this with a GitHub "environment" +
+    # required reviewers instead, but that protection rule is a paid
+    # feature for private repos -- this achieves the same practical
+    # "click a button to deploy" result without needing that.)
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
