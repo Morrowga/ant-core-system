@@ -9,7 +9,7 @@ def test_app_imports():
     from app.main import app  # noqa: F401
     paths = set(app.openapi()["paths"].keys())
     for path in ("/auth/register", "/attendance/check-in", "/reports", "/overtime/end",
-                 "/health/team-wellbeing-trend", "/dashboard/ask", "/billing/plans",
+                 "/health/team-wellbeing-trend", "/dashboard/ask", "/billing/modules",
                  "/feedback", "/knowledge/posts", "/certificates/me",
                  "/company/settings/{section}", "/work-threads", "/presence/heartbeat"):
         assert path in paths, f"missing route {path}"
