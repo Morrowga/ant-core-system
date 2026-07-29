@@ -85,18 +85,23 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    # Points this job at the "Server Deployment ANTS" environment, since
+    # that's where EC2_HOST/EC2_USER/EC2_SSH_KEY actually live (as
+    # Environment secrets, not Repository secrets) -- a job that doesn't
+    # declare which environment it belongs to can't see environment-
+    # scoped secrets at all, which is why EC2_HOST came back empty
+    # before this. This does NOT require required-reviewer approval or
+    # any paid feature -- that's a separate, optional protection rule;
+    # simply associating a job with an environment to read its secrets
+    # is free on every plan, private repos included.
+    environment: "Server Deployment ANTS"
     # This is what makes it continuous DELIVERY instead of continuous
     # DEPLOYMENT: deploy only runs when this workflow run was started
     # by a manual click of "Run workflow" in the Actions tab
     # (github.event_name == 'workflow_dispatch') -- never automatically
-    # on a plain push. A push to main still runs the `test` job above
+    # on a plain push. A push to main-v2 still runs the `test` job above
     # automatically, but deploying is now a deliberate separate action,
     # not something that happens the instant tests pass.
-    #
-    # (Originally tried gating this with a GitHub "environment" +
-    # required reviewers instead, but that protection rule is a paid
-    # feature for private repos -- this achieves the same practical
-    # "click a button to deploy" result without needing that.)
     if: github.event_name == 'workflow_dispatch'
     steps:
       - name: Deploy to EC2
