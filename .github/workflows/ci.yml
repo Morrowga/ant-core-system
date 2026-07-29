@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: # adds a manual "Run workflow" button in the GitHub Actions tab
 
 jobs:
   test:
@@ -80,3 +81,22 @@ jobs:
 
       - name: Run tests
         run: pytest -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # Only deploy on an actual push to main (or a manual click of "Run
+    # workflow") -- never on a pull_request build, and never if the
+    # tests above failed (needs: test enforces that automatically).
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/ants-backend
+            git pull origin main
+            docker compose -f docker-compose.prod.yml up -d --build

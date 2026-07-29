@@ -3,14 +3,14 @@ account. Safe to run more than once: if the email already exists, it just
 resets the password instead of failing on the unique constraint.
 
 Run with:
-    docker-compose exec worker python seed_admin.py
+    docker compose exec worker python seed_admin.py
 """
 from app.core.admin_auth import hash_admin_password
 from app.core.models.company import PlatformAdmin
 from app.workers.celery_app import SyncSessionLocal
 
 EMAIL = "ant@gmail.com"
-PASSWORD = "Password"
+PASSWORD = "stna"
 FULL_NAME = "Ant Admin"
 
 

@@ -1,0 +1,9 @@
+# Swap api.yourdomain.com for your real subdomain. Caddy automatically
+# provisions and renews a Let's Encrypt TLS certificate for whatever
+# domain is listed here -- no separate certbot setup needed -- as long
+# as DNS for it already points at this server's public IP, and ports
+# 80/443 are open in the EC2 security group (port 80 is needed briefly
+# during certificate issuance/renewal, not just 443).
+api.yourdomain.com {
+	reverse_proxy api:8000
+}

@@ -1,5 +1,7 @@
 """One-off seed script — creates a single demo company with enough data that
-every dashboard page (all 17 groups) has something real to render.
+every dashboard page (all 17 groups) has something real to render, with
+randomized statuses across every feature so the demo shows realistic mixed
+scenarios rather than one uniform state.
 
 Run inside the API container (so it uses the same DATABASE_URL as the app):
 
@@ -28,9 +30,12 @@ from app.modules.hr.models.misc import (Alert, AlertSetting, Certificate,
 from app.modules.hr.models.reports import Project, Report, ReportComment, WorkThread, WorkThreadEntry
 from app.core.models.user import Team, User
 
-ORGANIZATION_NAME = "Northwind Holdings"
+# Org renamed to just "Northwind" per request -- was "Northwind Holdings".
+ORGANIZATION_NAME = "Northwind"
 COMPANY_NAME = "Northwind Logistics Co."
 DEMO_PASSWORD = "Password123!"  # same password for every seeded user, for convenience
+
+DAYS_OF_HISTORY = 30  # was 14 -- more days = more natural variety across statuses
 
 PACE_LABELS = ["light", "steady", "steady", "heavy", "unclear"]
 
@@ -68,13 +73,10 @@ async def main() -> None:
         )
         db.add(subscription)
 
-        # New: also seed the forward-looking CompanyModule row (module_key
-        # "hr") alongside the legacy Subscription row above. Nothing reads
-        # this yet -- require_active_subscription() still checks
-        # Subscription today, per the deliberate not-yet-cut-over decision
-        # -- but seeding it now means this demo company is ready the
-        # moment that cutover happens, and lets you test the new
-        # Organization/CompanyModule schema shape today if you want to.
+        # ONLY the HR module is enabled for this demo -- no warehouse (or
+        # any other) CompanyModule row is seeded, deliberately, since
+        # this demo company is HR-only. If a warehouse row shows up here
+        # later, that's a sign this comment's assumption changed.
         db.add(CompanyModule(
             company_id=company.id, module_key="hr", plan_tier="mid", status="active",
             seats_used=8, auto_renew=True,
@@ -130,6 +132,13 @@ async def main() -> None:
         owner = make_user("owner@northwind.demo", "Alex Tran", "owner_admin", joined_days_ago=400)
         eng_manager = make_user("eng.manager@northwind.demo", "Priya Nair", "manager", eng_team.id, 300)
         ops_manager = make_user("ops.manager@northwind.demo", "Marcus Webb", "manager", ops_team.id, 300)
+        # Exactly 5 employees, as requested. new_hire below is a 6th
+        # employee-role user, kept SEPARATE from this list on purpose --
+        # it exists specifically to demo the onboarding feature's
+        # "partial progress in first 30 days" state, which none of the 5
+        # main employees represent. If you want strictly 5 employee-role
+        # users total instead, drop new_hire and move its onboarding
+        # records onto one of the 5 below.
         employees = [
             make_user("sofia@northwind.demo", "Sofia Reyes", "employee", eng_team.id, 200),
             make_user("daniel@northwind.demo", "Daniel Kim", "employee", eng_team.id, 150),
@@ -162,21 +171,42 @@ async def main() -> None:
         db.add_all([proj_mobile, proj_wms, proj_support])
         await db.flush()
 
-        # ---------------------------------------------------------- reports, attendance, health (last 14 days)
+        # ---------------------------------------------------------- reports, attendance, health
+        # Three attendance outcomes per person per workday now (was just
+        # a flat 10% skip before): normal, absent (nothing at all), or
+        # forgot-to-check-out (check_out_at left null) -- this is what
+        # actually feeds the "full scenarios" ask, since several
+        # dashboard features (alerts, attendance reliability on
+        # certificates, the "forgot_check_out" AlertSetting type already
+        # seeded above) only have something real to show if some
+        # fraction of days genuinely land in each of these three states.
         today = date.today()
-        for day_offset in range(14, 0, -1):
+        for day_offset in range(DAYS_OF_HISTORY, 0, -1):
             day = today - timedelta(days=day_offset)
             if day.weekday() >= 5:  # skip weekends
                 continue
             for u in all_reporting_users:
-                # ~90% chance this person worked & reported that day
-                if random.random() < 0.1:
-                    continue
+                outcome = random.choices(
+                    ["normal", "absent", "forgot_checkout"], weights=[80, 10, 10], k=1
+                )[0]
+
+                if outcome == "absent":
+                    continue  # nothing logged at all this day for this person
 
                 check_in = datetime.combine(day, time(9, random.randint(0, 20)), tzinfo=timezone.utc)
-                check_out = datetime.combine(day, time(17, random.randint(30, 59)), tzinfo=timezone.utc)
+                check_out = None if outcome == "forgot_checkout" else datetime.combine(
+                    day, time(17, random.randint(30, 59)), tzinfo=timezone.utc
+                )
                 db.add(AttendanceSession(user_id=u.id, check_in_at=check_in, check_out_at=check_out,
                                           desk_lat=10.7626, desk_lng=106.6602))
+
+                # A report can still happen even on a forgot-checkout day
+                # (they just never formally checked out) -- only skip the
+                # report on a small extra chance, so report completion
+                # itself has some natural gaps too (feeds the
+                # "low_report_completion" alert type).
+                if random.random() < 0.12:
+                    continue
 
                 project = random.choice([proj_mobile, proj_wms, proj_support])
                 hours = round(random.uniform(4, 9), 1)
@@ -189,11 +219,12 @@ async def main() -> None:
                     "Wrote tests for the new checkout flow, coverage now above 80%.",
                     "Investigated slow query on the reports endpoint, added an index.",
                 ]
+                report_end = check_out or (check_in + timedelta(hours=8))
                 report = Report(
                     user_id=u.id, project_id=project.id, hours=hours,
                     summary=random.choice(summaries), report_date=day,
                     editable_until=datetime.combine(day + timedelta(days=1), time.min, tzinfo=timezone.utc),
-                    created_at=check_out,
+                    created_at=report_end,
                 )
                 db.add(report)
                 await db.flush()
@@ -230,14 +261,39 @@ async def main() -> None:
             db.add(ReportComment(report_id=thread_reports[-1].id, author_id=eng_manager.id,
                                   comment="Let's pair on this tomorrow if it's still open."))
 
-        # ---------------------------------------------------------- leave & overtime-adjacent alert data
-        db.add(LeaveRequest(user_id=employees[2].id, type="sick", start_date=today + timedelta(days=2),
-                             end_date=today + timedelta(days=2), status="pending"))
-        db.add(LeaveRequest(user_id=employees[0].id, type="annual", start_date=today - timedelta(days=20),
-                             end_date=today - timedelta(days=18), status="approved"))
+        # ---------------------------------------------------------- leave requests
+        # One per employee (5 total), each a DIFFERENT type + status, so
+        # the Leave feature shows the full pending/approved/rejected
+        # spread rather than just two data points.
+        leave_scenarios = [
+            (employees[0], "sick", -6, -5, "approved"),
+            (employees[1], "annual", 3, 5, "pending"),
+            (employees[2], "sick", 2, 2, "pending"),
+            (employees[3], "annual", -20, -18, "approved"),
+            (employees[4], "personal", 10, 10, "rejected"),
+        ]
+        for user, leave_type, start_offset, end_offset, status in leave_scenarios:
+            db.add(LeaveRequest(
+                user_id=user.id, type=leave_type,
+                start_date=today + timedelta(days=start_offset),
+                end_date=today + timedelta(days=end_offset),
+                status=status,
+            ))
 
-        db.add(Alert(company_id=company.id, user_id=employees[3].id, type="away_from_desk", status="open"))
-        db.add(Alert(company_id=company.id, user_id=employees[4].id, type="low_report_completion", status="acknowledged"))
+        # ---------------------------------------------------------- alerts
+        # Spread across every AlertSetting type seeded above, and across
+        # all three statuses (open/acknowledged/resolved), instead of
+        # just two alerts total.
+        alert_scenarios = [
+            (employees[3], "away_from_desk", "open"),
+            (employees[4], "low_report_completion", "acknowledged"),
+            (employees[1], "missed_check_in", "resolved"),
+            (employees[2], "forgot_check_out", "open"),
+            (employees[0], "lateness_pattern", "acknowledged"),
+            (ops_manager, "overtime_no_report", "open"),
+        ]
+        for user, alert_type, status in alert_scenarios:
+            db.add(Alert(company_id=company.id, user_id=user.id, type=alert_type, status=status))
 
         # ---------------------------------------------------------- knowledge sharing
         post1 = KnowledgePost(company_id=company.id, author_id=owner.id,
@@ -248,23 +304,30 @@ async def main() -> None:
                                category="Engineering", pinned=False, must_acknowledge=False)
         db.add_all([post1, post2])
         await db.flush()
-        for u in employees:
+        # 4 of 5 employees acknowledged -- one gap left deliberately (plus
+        # new_hire's, below) so the ack-status view has something to show.
+        for u in employees[:4]:
             db.add(KnowledgeAcknowledgment(post_id=post1.id, user_id=u.id))
-        # Intentionally leave the new hire's ack missing, so the ack-status view has a gap to show.
 
         # ---------------------------------------------------------- recognition
         db.add(Recognition(company_id=company.id, given_by=eng_manager.id, employee_id=employees[0].id,
                             reason="Great root-cause work on the client sync issue this week."))
         db.add(Recognition(company_id=company.id, given_by=owner.id, employee_id=employees[1].id,
                             reason="Consistently high-quality PRs and reviews."))
+        db.add(Recognition(company_id=company.id, given_by=ops_manager.id, employee_id=employees[3].id,
+                            reason="Kept the warehouse handoff running smoothly during a short-staffed week."))
 
-        # ---------------------------------------------------------- feedback (one anonymous)
-        db.add(FeedbackTicket(company_id=company.id, user_id=None, category="workload",
-                               message="Our team has been stretched thin the last two sprints.",
-                               anonymous=True, status="open"))
-        db.add(FeedbackTicket(company_id=company.id, user_id=employees[3].id, category="general",
-                               message="Would love a better way to search old knowledge posts.",
-                               anonymous=False, status="seen"))
+        # ---------------------------------------------------------- feedback
+        # All three statuses represented, mix of anonymous/named.
+        feedback_scenarios = [
+            (None, "workload", "Our team has been stretched thin the last two sprints.", True, "open"),
+            (employees[3].id, "general", "Would love a better way to search old knowledge posts.", False, "seen"),
+            (employees[1].id, "process", "Daily report deadline feels tight some days.", False, "resolved"),
+            (None, "management", "Would appreciate more notice before schedule changes.", True, "open"),
+        ]
+        for user_id, category, message, anonymous, status in feedback_scenarios:
+            db.add(FeedbackTicket(company_id=company.id, user_id=user_id, category=category,
+                                   message=message, anonymous=anonymous, status=status))
 
         # ---------------------------------------------------------- onboarding
         item1 = OnboardingChecklistItem(company_id=company.id, title="Read the Employee Handbook",
@@ -278,20 +341,31 @@ async def main() -> None:
         db.add(EmployeeOnboardingProgress(user_id=new_hire.id, checklist_item_id=item2.id))
         # item1 and item3 intentionally left incomplete for new_hire, so the onboarding page shows partial progress.
 
-        # ---------------------------------------------------------- a sample certificate for a long-tenured employee
-        db.add(Certificate(
-            user_id=employees[0].id, period_type="monthly",
-            period_start=today.replace(day=1) - timedelta(days=32),
-            period_end=today.replace(day=1) - timedelta(days=1),
-            data_json={"hours_logged": 148, "attendance_reliability_pct": 96,
-                       "workload_pace": "steady", "recognitions": 1, "overtime_hours": 4},
-            pdf_url=None,
-        ))
+        # ---------------------------------------------------------- certificates
+        # One monthly certificate per employee (5, was 1) so the
+        # Certificates feature has full coverage across everyone, each
+        # with its own randomized stats rather than one hardcoded example.
+        period_start = today.replace(day=1) - timedelta(days=32)
+        period_end = today.replace(day=1) - timedelta(days=1)
+        for u in employees:
+            db.add(Certificate(
+                user_id=u.id, period_type="monthly",
+                period_start=period_start, period_end=period_end,
+                data_json={
+                    "hours_logged": random.randint(120, 168),
+                    "attendance_reliability_pct": random.randint(78, 99),
+                    "workload_pace": random.choice(PACE_LABELS),
+                    "recognitions": random.randint(0, 2),
+                    "overtime_hours": random.randint(0, 12),
+                },
+                pdf_url=None,
+            ))
 
         await db.commit()
 
         print(f"Seeded organization '{ORGANIZATION_NAME}' / company '{COMPANY_NAME}' "
               f"(organization_id={organization.id}, company_id={company.id}) successfully.\n")
+        print(f"{DAYS_OF_HISTORY} days of attendance/reports/health seeded, HR module only.\n")
         print("Login credentials (same password for all):")
         print(f"  password: {DEMO_PASSWORD}\n")
         print(f"  Owner/Admin : {owner.email}")
