@@ -4,6 +4,6 @@
 # as DNS for it already points at this server's public IP, and ports
 # 80/443 are open in the EC2 security group (port 80 is needed briefly
 # during certificate issuance/renewal, not just 443).
-api.yourdomain.com {
+ants.thihaeung.com {
 	reverse_proxy api:8000
 }
