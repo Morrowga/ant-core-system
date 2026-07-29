@@ -2,9 +2,9 @@ name: Backend CI
 
 on:
   push:
-    branches: [main]
+    branches: [main-v2]
   pull_request:
-    branches: [main]
+    branches: [main-v2]
   workflow_dispatch: # adds a manual "Run workflow" button in the GitHub Actions tab
 
 jobs:
@@ -107,5 +107,5 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/ants-backend
-            git pull origin main
+            git pull origin main-v2
             docker compose -f docker-compose.prod.yml up -d --build
