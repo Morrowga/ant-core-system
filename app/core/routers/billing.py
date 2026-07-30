@@ -134,7 +134,21 @@ async def disable_module(module_key: str, db: DB, user=Owner):
         raise HTTPException(status_code=404, detail=f"'{module_key}' isn't enabled for this company")
     cm.auto_renew = False
     if cm.stripe_subscription_id and stripe_client.stripe.api_key:
-        stripe_client.cancel_subscription(cm.stripe_subscription_id)  # cancels at period end via Stripe's own setting where configured
+        try:
+            # cancels at period end via Stripe's own setting where configured
+            stripe_client.cancel_subscription(cm.stripe_subscription_id)
+        except stripe_client.stripe.error.InvalidRequestError as exc:
+            # "No such subscription" -- the stored ID is already gone on
+            # Stripe's side (can happen after a database reset leaves a
+            # stale ID, or if it was already cancelled directly in
+            # Stripe's dashboard). The user's actual intent here is just
+            # "stop auto-renewing," which is already true locally either
+            # way -- don't let a missing remote record block that. Only
+            # swallow this specific "already gone" case; a genuine
+            # different Stripe error (auth failure, rate limit, etc.)
+            # should still surface, not be silently eaten.
+            if "No such subscription" not in str(exc):
+                raise
     await db.flush()
     return cm
 
