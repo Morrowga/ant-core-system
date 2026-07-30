@@ -19,10 +19,10 @@ MODULE_PRICE_IDS = {
 PRICE_TO_MODULE = {v: k for k, v in MODULE_PRICE_IDS.items() if v}
 
 MODULE_CATALOG = [
-    {"module_key": "hr", "name": "Office HR", "price_monthly_usd": 99,
+    {"module_key": "hr", "name": "Office HR", "price_monthly_usd": 80,
      "description": "Attendance, reports, health, knowledge, feedback, certificates, "
                      "alerts, AI insights, projects & invoicing -- one flat price, everything included."},
-    {"module_key": "warehouse", "name": "Warehouse", "price_monthly_usd": 79,
+    {"module_key": "warehouse", "name": "Warehouse", "price_monthly_usd": 40,
      "description": "Inventory, stock movements, and warehouse operations -- one flat price."},
 ]
 
