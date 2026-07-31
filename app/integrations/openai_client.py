@@ -22,6 +22,30 @@ import json
 
 from app.core.config import settings
 
+# Maps the i18n ISO codes this project actually registers (en/ja/ko/zh/hi)
+# to their unambiguous English names for use in prompts. Passing the bare
+# code straight into a prompt (e.g. "Respond in ja") is genuinely
+# ambiguous to a model -- "ja" is ALSO the German word for "yes", and
+# that exact collision caused a real bug: asking for Japanese ("ja")
+# returned a response in German that literally opened with "Ja," (German
+# for "Yes,"). Every language() call below should go through this map,
+# never insert `language` directly into a prompt string.
+LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh": "Chinese",
+    "hi": "Hindi",
+}
+
+
+def _language_name(language: str) -> str:
+    """Falls back to the raw code for anything not in LANGUAGE_NAMES --
+    better to pass through an unrecognized value than silently default to
+    English and hide a real gap (e.g. a new locale added to the frontend
+    but not yet added to LANGUAGE_NAMES here)."""
+    return LANGUAGE_NAMES.get(language, language)
+
 try:
     from openai import OpenAI
 except ImportError:  # allows importing the app without the package during tooling
@@ -49,7 +73,7 @@ def narrate(precomputed_metrics: dict, language: str = "en") -> str:
                 "You narrate workforce metrics for a manager. You are given exact, "
                 "precomputed numbers. Restate them in one friendly sentence. "
                 "NEVER alter, recompute, or extrapolate the numbers. "
-                f"Respond in {language} regardless of what language the input data is in.")},
+                f"Respond in {_language_name(language)} regardless of what language the input data is in.")},
             {"role": "user", "content": json.dumps(precomputed_metrics)},
         ],
         max_tokens=120,
@@ -118,7 +142,7 @@ def label_pace(precomputed: dict, language: str = "en") -> dict:
                 "early_checkout_minutes if this person checked in late or checked out early that "
                 "day (either can be null/absent if neither applies) -- mention these factually if "
                 "present and non-zero, but they do not change the label, only the explanation. "
-                f"Write the reasoning text in {language}, regardless of what language the report "
+                f"Write the reasoning text in {_language_name(language)}, regardless of what language the report "
                 "summary itself is written in. "
                 'Respond as JSON: {"reasoning": ...}')},
             {"role": "user", "content": json.dumps({**precomputed, "pace_label": label})},
@@ -321,7 +345,7 @@ def summarize_project_reports(precomputed: dict, language: str = "en") -> dict:
                 "someone did less, simply state what they did plainly -- do not explain or speculate "
                 "on why, and do not characterize their effort or attitude. This must read as a factual "
                 "activity log, never as a performance judgment.\n\n"
-                f"Write summary_bullets and every contribution's note in {language}, regardless of "
+                f"Write summary_bullets and every contribution's note in {_language_name(language)}, regardless of "
                 "what language the underlying report summaries are written in. Do not translate "
                 "employee names.\n\n"
                 'Respond as JSON: {"summary_bullets": [...], "contributions": '
