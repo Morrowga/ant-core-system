@@ -1,12 +1,14 @@
 """Email delivery for the landing page's public Contact and Support forms.
 
-ASSUMPTION FLAGGED: this assumes SMTP_HOST / SMTP_PORT / SMTP_USER /
-SMTP_PASSWORD / SMTP_FROM_EMAIL already exist in app.core.config.settings
-(seen referenced as dummy values in the CI test job earlier in this
-project's history, suggesting they're already a real, established config
-surface) plus one NEW setting, SUPPORT_INBOX_EMAIL -- the address these
-landing-page submissions should actually land in. Add that one if it
-doesn't exist yet.
+Uses the SAME SMTP settings already configured for this project
+(app.core.config.Settings) -- SMTP_HOST / SMTP_PORT / SMTP_USERNAME /
+SMTP_PASSWORD / SMTP_FROM_ADDRESS / SMTP_USE_TLS. Submissions land in the
+same inbox as SMTP_USERNAME itself (the Gmail account already configured
+for sending) -- deliberately NOT a new, separate required settings field,
+since adding one would need to be set in every environment (local
+included) before the app would even start. If a dedicated inbox is
+wanted later, add a SUPPORT_INBOX_EMAIL field with a default that falls
+back to SMTP_USERNAME, rather than a hard requirement.
 
 If a shared email-sending utility already exists elsewhere in this
 codebase (e.g. for invite emails or welcome emails), this should be
@@ -96,13 +98,14 @@ def _render_template(heading: str, intro: str, rows: list[tuple[str, str]]) -> s
 def _send(subject: str, html_body: str) -> None:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = settings.SMTP_FROM_EMAIL
-    msg["To"] = settings.SUPPORT_INBOX_EMAIL
+    msg["From"] = settings.SMTP_FROM_ADDRESS
+    msg["To"] = settings.SMTP_USERNAME  # same inbox as the sending account
     msg.attach(MIMEText(html_body, "html"))
 
     with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-        server.starttls()
-        server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        if settings.SMTP_USE_TLS:
+            server.starttls()
+        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
         server.send_message(msg)
 
 
