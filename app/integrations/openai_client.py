@@ -8,6 +8,15 @@
 There is deliberately NO compute_and_narrate(raw_question) — the model never
 computes metrics. If OPENAI_API_KEY is unset, deterministic stubs are returned
 so the whole flow works locally without a key.
+
+Language: narrate, label_pace, and summarize_project_reports all take an
+optional `language` param (default "en") -- the frontend passes whatever
+language is currently selected in its own UI, and that gets folded into the
+prompt as an explicit "respond in {language}" instruction, so the model's
+prose output (not the underlying data/labels, which stay deterministic and
+language-independent) comes back in the requested language. Stub responses
+(no API key configured) stay English-only regardless of the language param,
+since there's no model call to instruct in that path.
 """
 import json
 
@@ -28,7 +37,7 @@ def _get_client():
     return _client
 
 
-def narrate(precomputed_metrics: dict) -> str:
+def narrate(precomputed_metrics: dict, language: str = "en") -> str:
     """One-sentence narration of already-correct metrics. Input MUST be precomputed."""
     client = _get_client()
     if client is None:
@@ -39,7 +48,8 @@ def narrate(precomputed_metrics: dict) -> str:
             {"role": "system", "content": (
                 "You narrate workforce metrics for a manager. You are given exact, "
                 "precomputed numbers. Restate them in one friendly sentence. "
-                "NEVER alter, recompute, or extrapolate the numbers.")},
+                "NEVER alter, recompute, or extrapolate the numbers. "
+                f"Respond in {language} regardless of what language the input data is in.")},
             {"role": "user", "content": json.dumps(precomputed_metrics)},
         ],
         max_tokens=120,
@@ -63,7 +73,7 @@ def _compute_pace_label(todays_hours: float, avg_daily_hours_14d: float) -> str:
     return "steady"
 
 
-def label_pace(precomputed: dict) -> dict:
+def label_pace(precomputed: dict, language: str = "en") -> dict:
     """Labels a report's pace given precomputed hours context + summary text.
     May also include late_minutes / early_checkout_minutes (from that day's
     AttendanceSession, see ai_workload.py) -- either can be null/absent.
@@ -72,7 +82,14 @@ def label_pace(precomputed: dict) -> dict:
     pace_label is ALWAYS computed deterministically (see
     _compute_pace_label) -- the model, when available, only narrates WHY,
     it never decides the label itself. This keeps the label reproducible
-    and consistent regardless of how a summary happens to be phrased."""
+    and consistent regardless of how a summary happens to be phrased.
+
+    pace_label itself stays the fixed English enum value
+    (light/steady/heavy/unclear) regardless of `language` -- that's a
+    stable identifier the frontend maps to its own translated display
+    text (see features.*.pace.* keys), not prose. Only `reasoning` (the
+    free-text explanation) actually changes language.
+    """
     hours = precomputed.get("todays_hours", 0)
     avg = precomputed.get("avg_daily_hours_14d", 0) or hours
     late_minutes = precomputed.get("late_minutes")
@@ -101,6 +118,8 @@ def label_pace(precomputed: dict) -> dict:
                 "early_checkout_minutes if this person checked in late or checked out early that "
                 "day (either can be null/absent if neither applies) -- mention these factually if "
                 "present and non-zero, but they do not change the label, only the explanation. "
+                f"Write the reasoning text in {language}, regardless of what language the report "
+                "summary itself is written in. "
                 'Respond as JSON: {"reasoning": ...}')},
             {"role": "user", "content": json.dumps({**precomputed, "pace_label": label})},
         ],
@@ -125,6 +144,12 @@ def classify_question(question: str, allowed_query_types: list[str],
     cannot invent a team/employee/project/goal that doesn't exist. The caller
     still re-resolves every name against the DB, so a hallucinated name fails
     loudly there too.
+
+    No `language` param here on purpose -- this function returns a
+    query_type enum value and parameter values copied verbatim from
+    `entities` (real names already in whatever language they're stored
+    in), not generated prose. There's nothing here for a language
+    instruction to actually affect.
     """
     entities = entities or {}
 
@@ -210,7 +235,7 @@ def embed(texts: list[str]) -> list[list[float]]:
     return [d.embedding for d in resp.data]
 
 
-def summarize_project_reports(precomputed: dict) -> dict:
+def summarize_project_reports(precomputed: dict, language: str = "en") -> dict:
     """New, additive -- powers the AI Insights per-project summary. This is
     a deliberate, narrow exception to the "AI never computes numbers" rule:
     the contribution percentage here IS an AI judgment call, not arithmetic
@@ -231,6 +256,10 @@ def summarize_project_reports(precomputed: dict) -> dict:
       2. Focus on substantive completed work, filtering out cosmetic/trivial
          changes (e.g. "changed a button color") in favor of real progress
          (features shipped, bugs fixed, systems built).
+
+    `language`: both summary_bullets and each contribution's "note" come
+    back in this language -- employee names and estimated_pct numbers are
+    unaffected (names aren't translated, percentages aren't prose).
 
     precomputed shape:
       {
@@ -292,6 +321,9 @@ def summarize_project_reports(precomputed: dict) -> dict:
                 "someone did less, simply state what they did plainly -- do not explain or speculate "
                 "on why, and do not characterize their effort or attitude. This must read as a factual "
                 "activity log, never as a performance judgment.\n\n"
+                f"Write summary_bullets and every contribution's note in {language}, regardless of "
+                "what language the underlying report summaries are written in. Do not translate "
+                "employee names.\n\n"
                 'Respond as JSON: {"summary_bullets": [...], "contributions": '
                 '{"<employee name>": {"estimated_pct": <number>, "note": "<short neutral sentence>"}}}')},
             {"role": "user", "content": json.dumps(precomputed)},

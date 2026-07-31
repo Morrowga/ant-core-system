@@ -36,9 +36,15 @@ def _parse_dates(period_start: str, period_end: str) -> tuple[date, date]:
 
 
 @router.get("/overview")
-async def overview_summary(period_start: str, period_end: str, db: DB, user=DashUser):
+async def overview_summary(
+    period_start: str, period_end: str, db: DB, user=DashUser, language: str = "en",
+):
+    """language: the frontend's CURRENTLY SELECTED UI language (whoever's
+    viewing this page right now -- an owner/manager -- not any stored
+    per-employee language). Passed straight through to the AI narration
+    call; defaults to English if the frontend doesn't send one."""
     start, end = _parse_dates(period_start, period_end)
-    return await AIInsightsService(db, user).generate_overview(start, end)
+    return await AIInsightsService(db, user).generate_overview(start, end, language=language)
 
 
 @router.get("/projects/{project_id}/cooldown")
@@ -50,9 +56,14 @@ async def project_cooldown(project_id: int, db: DB, user=DashUser):
 
 
 @router.get("/projects/{project_id}")
-async def project_summary(project_id: int, period_start: str, period_end: str, db: DB, user=DashUser):
+async def project_summary(
+    project_id: int, period_start: str, period_end: str, db: DB, user=DashUser, language: str = "en",
+):
+    """Same language param/reasoning as overview_summary above."""
     start, end = _parse_dates(period_start, period_end)
-    return await AIInsightsService(db, user).generate_project_analysis(project_id, start, end)
+    return await AIInsightsService(db, user).generate_project_analysis(
+        project_id, start, end, language=language,
+    )
 
 
 @attendance_absences_router.get("/absences")

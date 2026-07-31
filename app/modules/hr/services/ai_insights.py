@@ -287,7 +287,12 @@ class AIInsightsService(TenantService):
             })
         return out
 
-    async def generate_overview(self, start: date, end: date) -> dict:
+    async def generate_overview(self, start: date, end: date, language: str = "en") -> dict:
+        """language: passed straight through to the narration call below --
+        see openai_client.narrate() for what it actually does with it
+        (folds an explicit "respond in {language}" instruction into the
+        prompt; the metrics dict itself is untouched, only the generated
+        prose changes language)."""
         if end > date.today():
             raise HTTPException(status_code=400, detail="period_end can't be in the future")
 
@@ -353,7 +358,7 @@ class AIInsightsService(TenantService):
             ),
         }
 
-        narrative = openai_client.narrate({"metric": "company_overview", **metrics})
+        narrative = openai_client.narrate({"metric": "company_overview", **metrics}, language=language)
 
         from app.modules.hr.models.ai_insights import CompanyOverviewAnalysis
         row = CompanyOverviewAnalysis(
@@ -392,7 +397,16 @@ class AIInsightsService(TenantService):
             },
         }
 
-    async def generate_project_analysis(self, project_id: int, start: date, end: date) -> dict:
+    async def generate_project_analysis(self, project_id: int, start: date, end: date, language: str = "en") -> dict:
+        """language: passed straight through to summarize_project_reports()
+        below -- same reasoning as generate_overview() above. Doesn't
+        affect whether a cached (cooldown) result gets returned instead --
+        a cached result was generated with whatever language was selected
+        AT THAT TIME, and won't retroactively change language just because
+        someone's viewing it now with a different UI language selected.
+        That's an acceptable tradeoff for the competition timeline; a
+        real fix would need language stored alongside the cached
+        ProjectAnalysis row itself."""
         _assert_period_excludes_today(end)
 
         from app.core.models.company import Company
@@ -446,7 +460,7 @@ class AIInsightsService(TenantService):
             "employees": employees,
         }
 
-        ai_result = openai_client.summarize_project_reports(precomputed)
+        ai_result = openai_client.summarize_project_reports(precomputed, language=language)
 
         metrics = {
             **precomputed,
