@@ -15,7 +15,10 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from app.core.config import settings
-from app.core.routers import admin, admin_auth, auth, billing, company, dev_testing, organizations, sso, support
+from app.core.routers import (
+    admin, admin_auth, auth, billing, company, dev_testing, organizations,
+    public_landing, sso, support,
+)
 from app.modules.hr.routers import (ai_insights, alerts, attendance, certificates, dashboard,
                                     employees, feedback, health, holidays, invoices, knowledge,
                                     notifications, onboarding, overtime, performance, projects,
@@ -92,6 +95,12 @@ app.include_router(ai_insights.attendance_absences_router)
 # Support (customer-facing ticket submission) -- not HR-specific, any
 # company can reach the platform operator regardless of which modules it has.
 app.include_router(support.router)
+
+# Public landing-page forms (Contact, Support ticket) -- NO auth, no
+# tenant/company context at all. Deliberately separate from support.router
+# above, which requires a logged-in Owner with an active plan; this one is
+# for anonymous marketing-site visitors and just sends an email.
+app.include_router(public_landing.router)
 
 # Internal platform-admin app (separate auth, cross-company visibility --
 # see app/core/admin_auth.py). Deliberately kept at the bottom, visually
