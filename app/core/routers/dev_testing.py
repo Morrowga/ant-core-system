@@ -12,7 +12,7 @@ from app.core.services import notifications as notification_service
 
 router = APIRouter(prefix="/dev", tags=["dev-testing"])
 
-TEST_EMAIL = "ko@gmail.com"
+TEST_EMAIL = "grace@northwind.demo"
 
 # Maps a short, easy-to-type `type` query param to the actual
 # (category, title_key, body_key, extra_data type, sample params) tuple --
@@ -80,8 +80,8 @@ NOTIFICATION_TYPES: dict[str, dict] = {
 
 @router.get("/test-notification")
 async def test_notification(db: DB, type: str = Query(..., description="One of NOTIFICATION_TYPES' keys")):
-    if settings.ENV != "local":
-        raise HTTPException(status_code=404, detail="Not found")
+    # if settings.ENV != "local":
+    #     raise HTTPException(status_code=404, detail="Not found")
 
     spec = NOTIFICATION_TYPES.get(type)
     if spec is None:
